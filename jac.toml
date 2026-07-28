@@ -1,0 +1,6 @@
+[project]
+name = "missioncontrol"
+version = "0.1.0"
+entry-point = "main.sv.jac"
+kind = "service"
+jac-version = "==0.34.7"

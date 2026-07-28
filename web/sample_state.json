@@ -1,0 +1,473 @@
+{
+  "tick": 7,
+  "status": "running",
+  "mission": {
+    "goal": "Locate and reach the survivor at (7,6). Avoid all hazards.",
+    "tasks": [
+      {
+        "id": "t1",
+        "desc": "Plot safe route to survivor",
+        "owner": "Planner",
+        "state": "done"
+      },
+      {
+        "id": "t2",
+        "desc": "Advance one cell along route",
+        "owner": "Executor",
+        "state": "blocked"
+      },
+      {
+        "id": "t3",
+        "desc": "Re-route around new hazard",
+        "owner": "Commander",
+        "state": "active"
+      }
+    ]
+  },
+  "grid": {
+    "w": 8,
+    "h": 8,
+    "cells": [
+      "start",
+      "free",
+      "free",
+      "hazard",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "hazard",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "hazard",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "hazard",
+      "hazard",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "free",
+      "hazard",
+      "free",
+      "free",
+      "hazard",
+      "free",
+      "free",
+      "hazard",
+      "free",
+      "hazard",
+      "free",
+      "free",
+      "free",
+      "target",
+      "free",
+      "free",
+      "free",
+      "hazard",
+      "free",
+      "hazard",
+      "free",
+      "free"
+    ]
+  },
+  "executor": {
+    "pos": [
+      4,
+      2
+    ],
+    "energy": 34,
+    "path": [
+      [
+        4,
+        2
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        6,
+        1
+      ],
+      [
+        6,
+        2
+      ],
+      [
+        6,
+        3
+      ],
+      [
+        6,
+        4
+      ],
+      [
+        7,
+        4
+      ],
+      [
+        7,
+        5
+      ],
+      [
+        7,
+        6
+      ]
+    ],
+    "visited": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        0
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        2
+      ],
+      [
+        3,
+        2
+      ],
+      [
+        4,
+        2
+      ]
+    ]
+  },
+  "proposals": {
+    "llm": "SOUTH",
+    "net": "SOUTH",
+    "astar": "SOUTH",
+    "chosen": "SOUTH",
+    "source": "llm",
+    "agreed": true,
+    "net_confidence": 0.9998687938661149
+  },
+  "verdict": {
+    "vetoed": true,
+    "rule": "no_hazard",
+    "reason": "Move SOUTH enters hazard at (4,3)",
+    "target_cell": [
+      4,
+      3
+    ]
+  },
+  "handoffs": [
+    {
+      "tick": 0,
+      "from": "Commander",
+      "to": "Planner",
+      "task_id": "t1",
+      "payload": {
+        "order": "plot safe route"
+      }
+    },
+    {
+      "tick": 0,
+      "from": "Planner",
+      "to": "Commander",
+      "task_id": "t1",
+      "payload": {
+        "route_cells": 14
+      }
+    },
+    {
+      "tick": 1,
+      "from": "Commander",
+      "to": "Executor",
+      "task_id": "t2",
+      "payload": {
+        "order": "advance",
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 1,
+      "from": "Executor",
+      "to": "Verifier",
+      "task_id": "t2",
+      "payload": {
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 2,
+      "from": "Commander",
+      "to": "Executor",
+      "task_id": "t2",
+      "payload": {
+        "order": "advance",
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 2,
+      "from": "Executor",
+      "to": "Verifier",
+      "task_id": "t2",
+      "payload": {
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 3,
+      "from": "Commander",
+      "to": "Executor",
+      "task_id": "t2",
+      "payload": {
+        "order": "advance",
+        "move": "SOUTH"
+      }
+    },
+    {
+      "tick": 3,
+      "from": "Executor",
+      "to": "Verifier",
+      "task_id": "t2",
+      "payload": {
+        "move": "SOUTH"
+      }
+    },
+    {
+      "tick": 4,
+      "from": "Commander",
+      "to": "Executor",
+      "task_id": "t2",
+      "payload": {
+        "order": "advance",
+        "move": "SOUTH"
+      }
+    },
+    {
+      "tick": 4,
+      "from": "Executor",
+      "to": "Verifier",
+      "task_id": "t2",
+      "payload": {
+        "move": "SOUTH"
+      }
+    },
+    {
+      "tick": 5,
+      "from": "Commander",
+      "to": "Executor",
+      "task_id": "t2",
+      "payload": {
+        "order": "advance",
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 5,
+      "from": "Executor",
+      "to": "Verifier",
+      "task_id": "t2",
+      "payload": {
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 6,
+      "from": "Commander",
+      "to": "Executor",
+      "task_id": "t2",
+      "payload": {
+        "order": "advance",
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 6,
+      "from": "Executor",
+      "to": "Verifier",
+      "task_id": "t2",
+      "payload": {
+        "move": "EAST"
+      }
+    },
+    {
+      "tick": 7,
+      "from": "Verifier",
+      "to": "Commander",
+      "task_id": "t2",
+      "payload": {
+        "rule": "no_hazard",
+        "blocked_move": "SOUTH"
+      }
+    }
+  ],
+  "log": [
+    {
+      "tick": 0,
+      "agent": "Commander",
+      "level": "info",
+      "text": "Mission received. Decomposed into 3 tasks."
+    },
+    {
+      "tick": 0,
+      "agent": "Planner",
+      "level": "info",
+      "text": "Route plotted: 14 cells threading the gap at (3,4)"
+    },
+    {
+      "tick": 0,
+      "agent": "Commander",
+      "level": "info",
+      "text": "Route accepted. Executor cleared to advance."
+    },
+    {
+      "tick": 1,
+      "agent": "Executor",
+      "level": "info",
+      "text": "Proposing EAST (source: llm, net conf 0.8656894463434258)"
+    },
+    {
+      "tick": 1,
+      "agent": "Executor",
+      "level": "success",
+      "text": "Committed EAST -> (1,0); energy 39"
+    },
+    {
+      "tick": 2,
+      "agent": "Executor",
+      "level": "info",
+      "text": "Proposing EAST (source: llm, net conf 0.7707363072493975)"
+    },
+    {
+      "tick": 2,
+      "agent": "Executor",
+      "level": "success",
+      "text": "Committed EAST -> (2,0); energy 38"
+    },
+    {
+      "tick": 3,
+      "agent": "Executor",
+      "level": "info",
+      "text": "Proposing SOUTH (source: llm, net conf 0.9999998386575006)"
+    },
+    {
+      "tick": 3,
+      "agent": "Executor",
+      "level": "success",
+      "text": "Committed SOUTH -> (2,1); energy 37"
+    },
+    {
+      "tick": 4,
+      "agent": "Executor",
+      "level": "info",
+      "text": "Proposing SOUTH (source: llm, net conf 0.9999961200009444)"
+    },
+    {
+      "tick": 4,
+      "agent": "Executor",
+      "level": "success",
+      "text": "Committed SOUTH -> (2,2); energy 36"
+    },
+    {
+      "tick": 5,
+      "agent": "Executor",
+      "level": "info",
+      "text": "Proposing EAST (source: llm, net conf 0.6582078059959595)"
+    },
+    {
+      "tick": 5,
+      "agent": "Executor",
+      "level": "success",
+      "text": "Committed EAST -> (3,2); energy 35"
+    },
+    {
+      "tick": 6,
+      "agent": "Executor",
+      "level": "info",
+      "text": "Proposing EAST (source: llm, net conf 0.9999513735258847)"
+    },
+    {
+      "tick": 6,
+      "agent": "Executor",
+      "level": "success",
+      "text": "Committed EAST -> (4,2); energy 34"
+    },
+    {
+      "tick": 6,
+      "agent": "Commander",
+      "level": "warn",
+      "text": "DISRUPTION: new hazard at (4,3) -- not yet on the team's map"
+    },
+    {
+      "tick": 7,
+      "agent": "Executor",
+      "level": "info",
+      "text": "Proposing SOUTH (source: llm, net conf 0.9998687938661149)"
+    },
+    {
+      "tick": 7,
+      "agent": "Verifier",
+      "level": "veto",
+      "text": "VETO (no_hazard): Move SOUTH enters hazard at (4,3)"
+    },
+    {
+      "tick": 7,
+      "agent": "Commander",
+      "level": "info",
+      "text": "Veto received. Re-delegating route planning."
+    },
+    {
+      "tick": 7,
+      "agent": "Planner",
+      "level": "info",
+      "text": "Map updated: (4,3) marked impassable"
+    },
+    {
+      "tick": 7,
+      "agent": "Planner",
+      "level": "info",
+      "text": "Route re-plotted around the obstruction: 10 cells"
+    }
+  ],
+  "stats": {
+    "moves_committed": 6,
+    "vetoes": 1,
+    "llm_calls": 7,
+    "replans": 1,
+    "llm_mode": "mock"
+  }
+}

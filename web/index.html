@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission Control — Multi-Agent Rescue Grid</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">◈</div>
+    <div class="brandtext">
+      <h1>MISSION&nbsp;CONTROL</h1>
+      <p>MULTI-AGENT RESCUE GRID</p>
+    </div>
+  </div>
+
+  <div class="readouts">
+    <div class="readout"><label>TICK</label><span id="r-tick" class="mono">--</span></div>
+    <div class="readout"><label>STATUS</label><span id="r-status" class="pill">--</span></div>
+    <div class="readout energy">
+      <label>ENERGY</label>
+      <span id="r-energy" class="mono">--</span>
+      <div class="ebar"><i id="r-energy-bar"></i></div>
+    </div>
+  </div>
+
+  <div class="badges">
+    <span id="badge-llm" class="badge">LLM: --</span>
+    <span id="badge-mode" class="badge" title="Click to retry live backend">SRC: --</span>
+  </div>
+
+  <div class="controls">
+    <button id="btn-run"  class="btn primary">▶ START</button>
+    <button id="btn-step" class="btn">⏭ STEP</button>
+    <button id="btn-reset" class="btn">⟲ RESET</button>
+    <button id="btn-hazard" class="btn danger" title="Drops a hazard on the cell the Executor is about to enter. Keyboard: H">☢ INJECT HAZARD AHEAD</button>
+  </div>
+</header>
+
+<div id="disruption" class="disruption" aria-live="assertive"></div>
+
+<main class="layout">
+
+  <!-- ======================= BOARD ======================= -->
+  <section class="panel board-panel">
+    <h2 class="panel-title">SECTOR GRID <small>8×8 · origin (0,0) top-left</small></h2>
+
+    <div class="board-wrap">
+      <div id="board" class="board" role="img" aria-label="8 by 8 rescue grid"></div>
+      <svg id="routeLayer" class="route-layer" viewBox="0 0 8 8" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <polyline id="visitedLine" class="visited-line" points=""></polyline>
+        <polyline id="pathLine" class="path-line" points=""></polyline>
+      </svg>
+      <div id="agentDot" class="agent-dot" hidden><span></span></div>
+    </div>
+
+    <div class="legend">
+      <span><i class="sw k-free"></i>free</span>
+      <span><i class="sw k-hazard"></i>hazard</span>
+      <span><i class="sw k-start"></i>start</span>
+      <span><i class="sw k-target"></i>target</span>
+      <span><i class="sw k-path"></i>planned route</span>
+      <span><i class="sw k-visited"></i>visited</span>
+    </div>
+
+    <div class="mission">
+      <h3>MISSION</h3>
+      <p id="goal" class="goal">—</p>
+      <ul id="tasks" class="tasks"></ul>
+    </div>
+  </section>
+
+  <!-- ======================= ORG / AGENTS ======================= -->
+  <section class="panel org-panel">
+    <h2 class="panel-title">AGENT ORG <small>handoffs light up live</small></h2>
+
+    <div id="org" class="org">
+      <svg id="orgWires" class="org-wires" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="node" id="node-Commander" data-agent="Commander" style="left:50%;top:13%">
+        <b>Commander</b><em>decompose · delegate</em><span class="tag" data-role="tag">idle</span>
+      </div>
+      <div class="node" id="node-Planner" data-agent="Planner" style="left:15%;top:50%">
+        <b>Planner</b><em>A* route</em><span class="tag" data-role="tag">idle</span>
+      </div>
+      <div class="node" id="node-Executor" data-agent="Executor" style="left:85%;top:50%">
+        <b>Executor</b><em>propose move</em><span class="tag" data-role="tag">idle</span>
+      </div>
+      <div class="node" id="node-Verifier" data-agent="Verifier" style="left:50%;top:87%">
+        <b>Verifier</b><em>hard rules · veto</em><span class="tag" data-role="tag">idle</span>
+      </div>
+    </div>
+
+    <div class="handoff-strip">
+      <span class="lbl">THIS TICK</span>
+      <div id="handoffList" class="handoff-list"><span class="muted">no handoffs</span></div>
+    </div>
+
+    <div class="proposals">
+      <h3>PROPOSALS <span id="agreeChip" class="chip">—</span></h3>
+      <div class="prop-grid">
+        <div class="prop" id="prop-llm"><label>LLM</label><b class="mono">—</b><span class="won">WON</span></div>
+        <div class="prop" id="prop-net"><label>POLICY NET</label><b class="mono">—</b><span class="won">WON</span></div>
+        <div class="prop" id="prop-astar"><label>A*</label><b class="mono">—</b><span class="won">WON</span></div>
+      </div>
+      <div class="conf">
+        <label>NET CONFIDENCE</label>
+        <div class="cbar"><i id="confBar"></i></div>
+        <span id="confVal" class="mono">—</span>
+      </div>
+      <div id="verdict" class="verdict"><span class="muted">no verdict yet</span></div>
+    </div>
+
+    <div class="stats" id="stats">
+      <div class="stat"><b id="s-moves" class="mono">0</b><label>MOVES</label></div>
+      <div class="stat"><b id="s-vetoes" class="mono">0</b><label>VETOES</label></div>
+      <div class="stat"><b id="s-llm" class="mono">0</b><label>LLM CALLS</label></div>
+      <div class="stat"><b id="s-replans" class="mono">0</b><label>REPLANS</label></div>
+    </div>
+  </section>
+
+  <!-- ======================= LOG ======================= -->
+  <section class="panel log-panel">
+    <h2 class="panel-title">REASONING LOG <small>newest last</small></h2>
+    <div id="log" class="log" role="log" aria-live="polite"></div>
+    <div class="log-foot">
+      <span class="key"><i class="dot a-Commander"></i>Commander</span>
+      <span class="key"><i class="dot a-Executor"></i>Executor</span>
+      <span class="key"><i class="dot a-Verifier"></i>Verifier</span>
+      <span class="key"><i class="dot a-Planner"></i>Planner</span>
+    </div>
+  </section>
+</main>
+
+<footer class="footbar">
+  <span id="toast" class="toast"></span>
+  <span class="hint">KEYS — <b>H</b> inject hazard · <b>Space</b> run/pause · <b>N</b> step · <b>R</b> reset</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

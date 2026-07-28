@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+
+# Jac build + persisted graph state (rebuilt from the seed on every reset)
+.jac/
+*.jab
+
+# Regenerable ML intermediates. The trained weights in ml/weights/ ARE
+# committed — they are the artifact; this is just the raw training set.
+ml/data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store
