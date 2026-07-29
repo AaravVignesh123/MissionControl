@@ -1,25 +1,58 @@
 {
-  "tick": 7,
+  "tick": 5,
+  "clock": "T+00:05",
   "status": "running",
+  "profile": {
+    "id": "urban",
+    "name": "Urban Search & Rescue",
+    "code": "US&R",
+    "agency": "FEMA US&R Task Force",
+    "summary": "Locate and reach victims trapped in the void spaces of a collapsed structure. Unstable rubble is lethal; monitor air and keep an egress path.",
+    "resource_label": "SCBA air",
+    "resource_unit": "min",
+    "hazard_noun": "collapse zone",
+    "safe_noun": "cleared void",
+    "objective_noun": "trapped victim",
+    "staging_noun": "staging area",
+    "disruption_label": "SECONDARY COLLAPSE",
+    "cell_labels": {
+      "open": "Cleared void",
+      "hazard": "Collapse zone",
+      "staging": "Staging area",
+      "victim": "Trapped victim"
+    }
+  },
+  "config": {
+    "profile": "urban",
+    "tunables": {
+      "team_size": 3,
+      "resource_budget": 44,
+      "hazard_density": 3,
+      "victim_count": 2,
+      "risk_tolerance": "standard"
+    },
+    "seed": 7
+  },
   "mission": {
-    "goal": "Locate and reach the survivor at (7,6). Avoid all hazards.",
+    "objective": "Reach 2 trapped victim(s) and egress to staging.",
+    "phase": "search",
     "tasks": [
       {
         "id": "t1",
-        "desc": "Plot safe route to survivor",
-        "owner": "Planner",
+        "desc": "Plan search route to nearest victim",
+        "owner": "Operations",
         "state": "done"
       },
       {
         "id": "t2",
         "desc": "Advance one cell along route",
-        "owner": "Executor",
+        "owner": "Rescue Team",
         "state": "blocked"
       },
       {
         "id": "t3",
-        "desc": "Re-route around new hazard",
-        "owner": "Commander",
+        "desc": "Re-task / re-route on Safety HALT",
+        "owner": "Incident Commander",
         "state": "active"
       }
     ]
@@ -28,446 +61,445 @@
     "w": 8,
     "h": 8,
     "cells": [
-      "start",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
       "hazard",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
+      "victim",
+      "victim",
+      "open",
+      "open",
       "hazard",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
+      "open",
       "hazard",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
+      "open",
       "hazard",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
       "hazard",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
       "hazard",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
       "hazard",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
+      "open",
       "hazard",
-      "free",
+      "open",
       "hazard",
-      "free",
-      "free",
-      "free",
-      "target",
-      "free",
-      "free",
-      "free",
+      "open",
+      "open",
+      "open",
+      "open",
+      "staging",
+      "open",
+      "open",
       "hazard",
-      "free",
-      "hazard",
-      "free",
-      "free"
+      "open",
+      "open",
+      "open",
+      "open"
+    ],
+    "staging": [
+      0,
+      7
     ]
   },
-  "executor": {
+  "responder": {
     "pos": [
-      4,
-      2
+      0,
+      3
     ],
-    "energy": 34,
+    "resource": 44,
+    "resource_max": 48,
+    "objective": [
+      0,
+      1
+    ],
     "path": [
       [
-        4,
-        2
-      ],
-      [
-        4,
-        1
-      ],
-      [
-        5,
-        1
-      ],
-      [
-        6,
-        1
-      ],
-      [
-        6,
-        2
-      ],
-      [
-        6,
+        0,
         3
       ],
       [
-        6,
-        4
+        1,
+        3
       ],
       [
-        7,
-        4
+        1,
+        2
       ],
       [
-        7,
-        5
+        1,
+        1
       ],
       [
-        7,
-        6
+        0,
+        1
       ]
     ],
     "visited": [
       [
         0,
-        0
+        7
       ],
       [
-        1,
-        0
+        0,
+        6
       ],
       [
-        2,
-        0
+        0,
+        5
       ],
       [
-        2,
-        1
+        0,
+        4
       ],
       [
-        2,
-        2
-      ],
-      [
-        3,
-        2
-      ],
-      [
-        4,
-        2
+        0,
+        3
       ]
     ]
   },
+  "victims": {
+    "total": 2,
+    "reached": 0,
+    "remaining": [
+      [
+        0,
+        1
+      ],
+      [
+        7,
+        0
+      ]
+    ],
+    "rescued": []
+  },
   "proposals": {
-    "llm": "SOUTH",
-    "net": "SOUTH",
-    "astar": "SOUTH",
-    "chosen": "SOUTH",
+    "llm": "NORTH",
+    "net": "NORTH",
+    "astar": "NORTH",
+    "chosen": "NORTH",
     "source": "llm",
     "agreed": true,
-    "net_confidence": 0.9998687938661149
+    "net_confidence": 0.9999611759643581
   },
   "verdict": {
     "vetoed": true,
     "rule": "no_hazard",
-    "reason": "Move SOUTH enters hazard at (4,3)",
+    "reason": "Advance NORTH enters a hazard at (0,2)",
     "target_cell": [
-      4,
-      3
+      0,
+      2
     ]
   },
   "handoffs": [
     {
       "tick": 0,
-      "from": "Commander",
-      "to": "Planner",
+      "from": "Incident Commander",
+      "to": "Operations",
       "task_id": "t1",
       "payload": {
-        "order": "plot safe route"
+        "order": "plan search route"
       }
     },
     {
       "tick": 0,
-      "from": "Planner",
-      "to": "Commander",
+      "from": "Operations",
+      "to": "Incident Commander",
       "task_id": "t1",
       "payload": {
-        "route_cells": 14
+        "route_cells": 7
       }
     },
     {
       "tick": 1,
-      "from": "Commander",
-      "to": "Executor",
+      "from": "Incident Commander",
+      "to": "Rescue Team",
       "task_id": "t2",
       "payload": {
         "order": "advance",
-        "move": "EAST"
+        "move": "NORTH"
       }
     },
     {
       "tick": 1,
-      "from": "Executor",
-      "to": "Verifier",
+      "from": "Rescue Team",
+      "to": "Safety Officer",
       "task_id": "t2",
       "payload": {
-        "move": "EAST"
+        "move": "NORTH"
       }
     },
     {
       "tick": 2,
-      "from": "Commander",
-      "to": "Executor",
+      "from": "Incident Commander",
+      "to": "Rescue Team",
       "task_id": "t2",
       "payload": {
         "order": "advance",
-        "move": "EAST"
+        "move": "NORTH"
       }
     },
     {
       "tick": 2,
-      "from": "Executor",
-      "to": "Verifier",
+      "from": "Rescue Team",
+      "to": "Safety Officer",
       "task_id": "t2",
       "payload": {
-        "move": "EAST"
+        "move": "NORTH"
       }
     },
     {
       "tick": 3,
-      "from": "Commander",
-      "to": "Executor",
+      "from": "Incident Commander",
+      "to": "Rescue Team",
       "task_id": "t2",
       "payload": {
         "order": "advance",
-        "move": "SOUTH"
+        "move": "NORTH"
       }
     },
     {
       "tick": 3,
-      "from": "Executor",
-      "to": "Verifier",
+      "from": "Rescue Team",
+      "to": "Safety Officer",
       "task_id": "t2",
       "payload": {
-        "move": "SOUTH"
+        "move": "NORTH"
       }
     },
     {
       "tick": 4,
-      "from": "Commander",
-      "to": "Executor",
+      "from": "Incident Commander",
+      "to": "Rescue Team",
       "task_id": "t2",
       "payload": {
         "order": "advance",
-        "move": "SOUTH"
+        "move": "NORTH"
       }
     },
     {
       "tick": 4,
-      "from": "Executor",
-      "to": "Verifier",
+      "from": "Rescue Team",
+      "to": "Safety Officer",
       "task_id": "t2",
       "payload": {
-        "move": "SOUTH"
+        "move": "NORTH"
       }
     },
     {
       "tick": 5,
-      "from": "Commander",
-      "to": "Executor",
+      "from": "Incident Commander",
+      "to": "Rescue Team",
       "task_id": "t2",
       "payload": {
         "order": "advance",
-        "move": "EAST"
+        "move": "NORTH"
       }
     },
     {
       "tick": 5,
-      "from": "Executor",
-      "to": "Verifier",
+      "from": "Rescue Team",
+      "to": "Safety Officer",
       "task_id": "t2",
       "payload": {
-        "move": "EAST"
+        "move": "NORTH"
       }
     },
     {
-      "tick": 6,
-      "from": "Commander",
-      "to": "Executor",
-      "task_id": "t2",
-      "payload": {
-        "order": "advance",
-        "move": "EAST"
-      }
-    },
-    {
-      "tick": 6,
-      "from": "Executor",
-      "to": "Verifier",
-      "task_id": "t2",
-      "payload": {
-        "move": "EAST"
-      }
-    },
-    {
-      "tick": 7,
-      "from": "Verifier",
-      "to": "Commander",
+      "tick": 5,
+      "from": "Safety Officer",
+      "to": "Incident Commander",
       "task_id": "t2",
       "payload": {
         "rule": "no_hazard",
-        "blocked_move": "SOUTH"
+        "blocked_move": "NORTH"
       }
     }
   ],
   "log": [
     {
       "tick": 0,
-      "agent": "Commander",
+      "clock": "T+00:00",
+      "agent": "Incident Commander",
       "level": "info",
-      "text": "Mission received. Decomposed into 3 tasks."
+      "text": "US&R operation. 2 trapped victim(s) reported. Command established."
     },
     {
       "tick": 0,
-      "agent": "Planner",
+      "clock": "T+00:00",
+      "agent": "Incident Commander",
       "level": "info",
-      "text": "Route plotted: 14 cells threading the gap at (3,4)"
+      "text": "Tasking Operations: Plan a hazard-free search route to victims."
     },
     {
       "tick": 0,
-      "agent": "Commander",
+      "clock": "T+00:00",
+      "agent": "Incident Commander",
       "level": "info",
-      "text": "Route accepted. Executor cleared to advance."
+      "text": "Tasking Rescue Team: Advance one cell toward the objective."
+    },
+    {
+      "tick": 0,
+      "clock": "T+00:00",
+      "agent": "Incident Commander",
+      "level": "info",
+      "text": "Tasking Safety Officer: Clear each advance against safety doctrine."
+    },
+    {
+      "tick": 0,
+      "clock": "T+00:00",
+      "agent": "Incident Commander",
+      "level": "info",
+      "text": "Tasking Incident Commander: Re-task the team after a halt."
+    },
+    {
+      "tick": 0,
+      "clock": "T+00:00",
+      "agent": "Operations",
+      "level": "info",
+      "text": "Search route to nearest trapped victim plotted: 7 cells."
+    },
+    {
+      "tick": 0,
+      "clock": "T+00:00",
+      "agent": "Incident Commander",
+      "level": "info",
+      "text": "Route accepted. Rescue Team cleared to advance."
     },
     {
       "tick": 1,
-      "agent": "Executor",
+      "clock": "T+00:01",
+      "agent": "Rescue Team",
       "level": "info",
-      "text": "Proposing EAST (source: llm, net conf 0.8656894463434258)"
+      "text": "Advancing NORTH (source llm, net conf 0.9999964885757107)."
     },
     {
       "tick": 1,
-      "agent": "Executor",
+      "clock": "T+00:01",
+      "agent": "Safety Officer",
       "level": "success",
-      "text": "Committed EAST -> (1,0); energy 39"
+      "text": "Advance NORTH to (0,6) cleared."
     },
     {
       "tick": 2,
-      "agent": "Executor",
+      "clock": "T+00:02",
+      "agent": "Rescue Team",
       "level": "info",
-      "text": "Proposing EAST (source: llm, net conf 0.7707363072493975)"
+      "text": "Advancing NORTH (source llm, net conf 0.9999983546549576)."
     },
     {
       "tick": 2,
-      "agent": "Executor",
+      "clock": "T+00:02",
+      "agent": "Safety Officer",
       "level": "success",
-      "text": "Committed EAST -> (2,0); energy 38"
+      "text": "Advance NORTH to (0,5) cleared."
     },
     {
       "tick": 3,
-      "agent": "Executor",
+      "clock": "T+00:03",
+      "agent": "Rescue Team",
       "level": "info",
-      "text": "Proposing SOUTH (source: llm, net conf 0.9999998386575006)"
+      "text": "Advancing NORTH (source llm, net conf 0.9999952952227603)."
     },
     {
       "tick": 3,
-      "agent": "Executor",
+      "clock": "T+00:03",
+      "agent": "Safety Officer",
       "level": "success",
-      "text": "Committed SOUTH -> (2,1); energy 37"
+      "text": "Advance NORTH to (0,4) cleared."
     },
     {
       "tick": 4,
-      "agent": "Executor",
+      "clock": "T+00:04",
+      "agent": "Rescue Team",
       "level": "info",
-      "text": "Proposing SOUTH (source: llm, net conf 0.9999961200009444)"
+      "text": "Advancing NORTH (source llm, net conf 0.9996771345548556)."
     },
     {
       "tick": 4,
-      "agent": "Executor",
+      "clock": "T+00:04",
+      "agent": "Safety Officer",
       "level": "success",
-      "text": "Committed SOUTH -> (2,2); energy 36"
+      "text": "Advance NORTH to (0,3) cleared."
     },
     {
-      "tick": 5,
-      "agent": "Executor",
-      "level": "info",
-      "text": "Proposing EAST (source: llm, net conf 0.6582078059959595)"
-    },
-    {
-      "tick": 5,
-      "agent": "Executor",
-      "level": "success",
-      "text": "Committed EAST -> (3,2); energy 35"
-    },
-    {
-      "tick": 6,
-      "agent": "Executor",
-      "level": "info",
-      "text": "Proposing EAST (source: llm, net conf 0.9999513735258847)"
-    },
-    {
-      "tick": 6,
-      "agent": "Executor",
-      "level": "success",
-      "text": "Committed EAST -> (4,2); energy 34"
-    },
-    {
-      "tick": 6,
-      "agent": "Commander",
+      "tick": 4,
+      "clock": "T+00:04",
+      "agent": "Incident Commander",
       "level": "warn",
-      "text": "DISRUPTION: new hazard at (4,3) -- not yet on the team's map"
+      "text": "SECONDARY COLLAPSE: new collapse zone at (0,2) -- not yet on the team's map."
     },
     {
-      "tick": 7,
-      "agent": "Executor",
+      "tick": 5,
+      "clock": "T+00:05",
+      "agent": "Rescue Team",
       "level": "info",
-      "text": "Proposing SOUTH (source: llm, net conf 0.9998687938661149)"
+      "text": "Advancing NORTH (source llm, net conf 0.9999611759643581)."
     },
     {
-      "tick": 7,
-      "agent": "Verifier",
+      "tick": 5,
+      "clock": "T+00:05",
+      "agent": "Safety Officer",
       "level": "veto",
-      "text": "VETO (no_hazard): Move SOUTH enters hazard at (4,3)"
+      "text": "HALT (no_hazard): Advance NORTH enters a hazard at (0,2)."
     },
     {
-      "tick": 7,
-      "agent": "Commander",
+      "tick": 5,
+      "clock": "T+00:05",
+      "agent": "Incident Commander",
       "level": "info",
-      "text": "Veto received. Re-delegating route planning."
+      "text": "HALT acknowledged. Re-tasking Operations to re-route."
     },
     {
-      "tick": 7,
-      "agent": "Planner",
+      "tick": 5,
+      "clock": "T+00:05",
+      "agent": "Operations",
       "level": "info",
-      "text": "Map updated: (4,3) marked impassable"
+      "text": "Map updated: (0,2) marked impassable."
     },
     {
-      "tick": 7,
-      "agent": "Planner",
+      "tick": 5,
+      "clock": "T+00:05",
+      "agent": "Operations",
       "level": "info",
-      "text": "Route re-plotted around the obstruction: 10 cells"
+      "text": "Route re-plotted around the obstruction: 5 cells."
     }
   ],
   "stats": {
-    "moves_committed": 6,
+    "moves_committed": 4,
     "vetoes": 1,
-    "llm_calls": 7,
+    "llm_calls": 5,
     "replans": 1,
+    "rescued": 0,
     "llm_mode": "mock"
   }
 }

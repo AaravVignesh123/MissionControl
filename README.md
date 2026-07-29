@@ -1,198 +1,194 @@
-# Mission Control
+# Mission Control — SAR Operations Simulator
 
-**A team of specialized AI agents — not one chatbot — that plan and run a rescue mission
-together on a live grid, with a safety agent that vetoes unsafe moves before they commit.**
+**A search-and-rescue operations simulator run by a team of specialized AI agents — not one
+chatbot. A department picks a rescue domain, configures the operation, and rehearses it under
+the Incident Command System, with a Safety Officer agent that enforces doctrine and can halt
+the team before an unsafe move commits.**
 
-Built on [Jac](https://www.jaseci.org/)'s object-spatial model: grid cells are graph nodes,
-agents are walkers, and coordination happens through shared graph state.
+Built on [Jac](https://www.jaseci.org/)'s object-spatial model: the sector is a graph of cells,
+the agents are walkers, and coordination flows through shared graph state.
 
 ---
 
-## The 30-second version
+## Why this exists
 
-A mission comes in: *locate and reach the survivor, avoid the hazards*. A **Commander**
-decomposes it and delegates. An **Executor** proposes one move per tick. A **Verifier**
-checks every proposed action against hard rules and **can block it**. A **Planner** holds
-the A\* route. No human drives it.
+Emergency-response departments rehearse operations constantly — tabletop exercises, pre-plans,
+after-action reviews. Mission Control is a **mission-rehearsal simulator**: choose a domain
+(urban collapse, wildland fire, swiftwater), set the parameters of *your* operation, and watch
+an agentic Incident Command team plan and execute a search under real doctrine. The point isn't
+a clever demo — it's a tool a department could specialize to model the kind of rescue they
+actually run, and to see where doctrine forces a halt or a withdrawal.
 
-Three properties make this genuinely multi-agent rather than one model in a loop:
+## The team is an ICS org chart, not four copies of one bot
 
-1. **Heterogeneous roles** — different agents, different jobs, different tools.
-2. **Structured handoffs** — typed messages between agents, rendered as lit-up edges.
-3. **A guardian with real power** — the Verifier can veto, and the veto changes what happens next.
+| ICS role | Job | How it decides |
+|---|---|---|
+| **Incident Commander** | Decompose the objective, re-task after a halt | `by llm()` decomposition (Groq/Anthropic) |
+| **Operations** | Plan and re-plan the search route | classic **A\*** pathfinding |
+| **Rescue Team** | Propose the next one-cell advance | `by llm()` + a **trained policy net** + A\* fallback |
+| **Safety Officer** | Clear or **HALT** every advance against doctrine | pure rules — **never an LLM call** |
+
+Three properties make this genuinely multi-agent: heterogeneous roles, typed handoffs between
+them (rendered as an incident log + roster), and a guardian with real blocking power.
 
 ## Three proposers, one arbiter
 
-Each tick, three independent systems propose a move:
-
-| Proposer | What it is |
-|---|---|
-| **LLM** | A real `by llm()` call (Anthropic `claude-sonnet-4-6`), prompted via `sem` semstrings |
-| **Policy net** | A neural net we trained from scratch by behavioral cloning on A\* (96.2% held-out) |
-| **A\*** | Deterministic ground truth — always available as a floor |
-
-The first valid proposal wins. Then the **Verifier** — pure rules, **never an LLM call** —
-rules on it. That is deliberate: the veto is the climax of the demo and it must not flake.
+Each tick the Rescue Team's advance is chosen from three independent proposers, then the Safety
+Officer rules on it:
 
 ```
-llm_move  = byllm_propose(situation)     # real LLM decision
-net_move  = policy_net(state)            # trained MLP
-safe_move = astar(state)                 # deterministic floor
+llm_move  = groq_propose(situation)   # a real LLM advance
+net_move  = policy_net(state)         # trained from scratch on A* demos (96% agreement)
+astar     = operations_route()        # deterministic floor
 
 chosen  = first valid of (llm, net, astar)
-verdict = verifier_rules(chosen)         # PURE RULES — cannot flake
-if verdict.vetoed:
-    hold position; handoff Verifier -> Commander; re-delegate to Planner; replan
+verdict = safety_officer(chosen)      # PURE DOCTRINE — cannot flake
+if verdict is HALT:      hold; hand off Safety Officer -> IC; re-task Operations; reroute
+if verdict is WITHDRAW:  Return-To-Base; operation aborts safely (crew out in time)
 ```
 
-## Why the veto is meaningful (the part that took the longest to get right)
+## Safety Officer doctrine (deterministic, no LLM)
 
-Ground truth and the team's belief are **deliberately different**:
+Which rules are active comes from the domain profile; thresholds come from the risk tolerance.
 
-- The **Verifier** checks against live ground truth. It is the safety authority.
-- **Commander / Planner / Executor / policy net** reason over the *last-known* map.
+| Rule | Halts / withdraws when | Real doctrine |
+|---|---|---|
+| `no_hazard` | advance enters collapse / active fire / hydraulic | don't walk into the lethal cell |
+| `escape_route` | advance severs the only safe path back to staging → **withdraw** | LCES — never lose your way out |
+| `air_reserve` | can't advance and still egress with reserve in hand → **withdraw** | rule of thirds (SCBA air management) |
+| `in_bounds` · `no_thrash` · `no_loop` | leaves the area / oscillates / livelocks | operational sanity |
 
-When a hazard is injected it is real immediately, but it is **not on the planners' map yet**.
-They propose a move that *was* safe; the Verifier catches it against live sensor truth; and
-**the veto is how the team learns the hazard exists**. The cell then graduates onto the known
-map and the Planner routes around it.
+`air_reserve` is where the risk tolerance bites, and it produces a genuinely useful result:
 
-Without this split the proposers would silently avoid every new hazard and the Verifier would
-have nothing to catch. We found that out the hard way — the first integration produced a
-system that worked perfectly and demonstrated nothing.
+| Risk | Reserve | Typical outcome on a tight budget |
+|---|---|---|
+| Aggressive | 1.05× | pushes to near-empty, reaches more victims, higher exposure |
+| Standard | 1.3× | balanced; turns back with a working margin |
+| Conservative | 2.0× | Return-To-Base earliest, most air left, fewest victims reached |
 
-**Veto → re-delegate.** A veto also transfers routing authority from the Executor's proposers
-to the Planner's deterministic route for the next tick. That is what stops a confidently-wrong
-proposer from being vetoed on the same move forever.
+A department can see, before anyone deploys, how their air-management doctrine trades victims
+reached against crew safety on *their* scenario.
 
-## Verifier rules (deterministic, no LLM)
+## Why the HALT is meaningful (the hard part)
 
-| Rule | Vetoes when |
-|---|---|
-| `in_bounds` | target cell is outside the 8×8 grid |
-| `no_hazard` | target cell is a hazard |
-| `energy_budget` | energy exhausted |
-| `no_thrash` | the move bounces straight back to the previous cell |
-| `no_loop` | the move re-enters a cell for the 3rd+ time (livelock guard) |
+Ground truth and the team's belief are deliberately separated. The **Safety Officer** checks
+live ground truth; the **IC / Operations / Rescue Team / policy net** reason over the
+*last-known* map. A disruption (a secondary collapse, a fire spread, rising water) is real
+immediately but **not on the team's map yet** — so they advance into what *was* safe, the
+Safety Officer catches it against live sensors, and **the HALT is how the team learns the
+hazard exists**. The blocked cell then graduates onto the known map and Operations reroutes.
+Without this split the planners would silently avoid every new hazard and the Safety Officer
+would have nothing to catch.
 
-`no_loop` exists because we watched a proposer cycle (7,4)→(6,4)→(6,3)→(7,3) until the
-battery died. `no_thrash` only catches a two-cell bounce; a four-cell ring slips straight past it.
+A HALT also transfers routing authority from the Rescue Team's proposers to Operations' A\*
+route for the next tick (a livelock transfers it for good) — so a confidently-wrong proposer
+can't be halted on the same move forever.
 
 ---
 
 ## Run it
 
-**Requires nothing but the Jac binary** — it bundles its own CPython, so your system Python
-version is irrelevant.
+Requires only the Jac binary — it bundles its own CPython, so your system Python is irrelevant.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jaseci-labs/jaseci/main/scripts/install.sh | bash
 ```
 
-Pinned to **jac 0.34.7**. Then, from the repo root:
+Pinned to **jac 0.34.7**. Then from the repo root:
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
 jac start main.sv.jac --no-client --port 8800
 ```
 
-The server takes ~20-25s to become ready. In a second terminal:
+The server takes ~20–25s to become ready. In a second terminal:
 
 ```bash
 cd web && python3 -m http.server 8901
 ```
 
-Open **http://localhost:8901/index.html**.
+Open **http://localhost:8901/index.html**, pick a profile, set the tunables, and launch.
 
-> **Port 8800, not 8000.** Port 8000 is commonly already taken; if the API 404s on every
-> endpoint, something else owns the port. `jac run` serves the same thing but does **not**
-> accept `--port`.
+> **Port 8800, not 8000.** If every endpoint 404s, another app owns the port.
+> `jac run` serves the same thing but does not accept `--port`.
 
-### With a real LLM
+### With a live LLM (Groq — fast, ideal for the per-tick loop)
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export GROQ_API_KEY=gsk_...
 ```
 
-That is the only switch. With it set, `brain_mode()` reports `live` and the on-screen badge
-reads **LIVE LLM**; without it the system runs on byLLM's `MockLLM` and the badge reads
-**MOCK**. The badge is driven by an `isinstance` check on the model object actually wired up,
-so it cannot claim "live" while running mocked.
+Then start the server in that shell. The on-screen badge reads **LIVE** vs **MOCK**, driven by
+an `isinstance` check on the model object actually wired up — it can't claim live while mocked.
+`ANTHROPIC_API_KEY` (`claude-sonnet-4-6`) also works; Groq wins if both are set. With no key at
+all the whole system runs on byLLM's `MockLLM`, fully offline.
 
 ### Drive it
 
-| Control | Does |
-|---|---|
-| **START / SPACE** | auto-tick ~2×/sec |
-| **STEP / N** | one tick |
-| **RESET / R** | back to the seeded start |
-| **INJECT HAZARD AHEAD / H** | **the disruption** |
-
-The disruption drops a hazard on the cell the Executor is *actually about to enter*, rather
-than a fixed coordinate — the three proposers don't always agree on the route, so a hardcoded
-cell can miss and the veto never fires. The backend also refuses any cell that would strand
-the mission.
+Start/Pause auto-tick · Step · Reset · **Inject Disruption** (a domain hazard on the cell the
+team is about to enter — the Safety Officer HALT is guaranteed and never strands the operation)
+· New mission.
 
 ### If everything is on fire
 
-Three independent fallbacks, all verified:
-
-| Layer | How | Needs |
+| Fallback | How | Needs |
 |---|---|---|
-| **Mock LLM** | just don't set the API key | no network, no key |
-| **Replay** | `index.html?mode=replay` | **no backend at all** — 19 frames recorded off the real server |
-| **Fixture** | automatic when :8800 is unreachable | nothing |
+| Mock reasoner | don't set a key | no network, no key |
+| Replay | `index.html?mode=replay` | **no backend** — a full recorded run |
+| Fixture | automatic when :8800 is unreachable | nothing |
 
 ---
+
+## Configure your operation
+
+`POST /function/list_profiles` exposes the tunables; the setup screen builds controls from it.
+
+- **Profile** — urban US&R / wildland fire / swiftwater. Sets terrain language, the resource
+  being managed, the active doctrine, and how a disruption reads.
+- **Team size** — crew extends the operational window (rotation).
+- **Resource budget** — the operational window; must cover reaching victims *and* egress.
+- **Hazard density** — how contested the sector is.
+- **Victims** — 1–3 to locate and reach.
+- **Risk tolerance** — the Safety Officer's air-reserve doctrine (see the table above).
+
+Scenarios are deterministic in `(profile, tunables, seed)`, so a rehearsal replays identically
+and a department can share a scenario by its seed.
 
 ## Layout
 
 ```
-main.sv.jac        the four endpoints + the tick loop
-world.sv.jac       graph schema (Cell/Adj lattice, Mission, LogEntry, Handoff) + seed
-rules.sv.jac       the Verifier. pure rules, zero LLM imports
-brain.sv.jac       byLLM functions + sem prompts + live/mock switch
-lib/astar.py       A* pathfinding (stdlib only)
-lib/policy.py      policy-net inference — PURE PYTHON, no numpy (runs inside Jac's runtime)
+main.sv.jac        endpoints (list_profiles, configure_mission, tick, inject_disruption) + tick loop
+world.sv.jac       graph schema, multi-victim Mission node, scenario materialisation
+rules.sv.jac       the Safety Officer — pure doctrine, zero LLM imports
+brain.sv.jac       byLLM reasoners + ICS prompts + Groq/Anthropic/mock switch
+lib/profiles.py    the 3 domain profiles + deterministic scenario generator (pure stdlib)
+lib/astar.py       A* pathfinding
+lib/policy.py      policy-net inference — PURE PYTHON, no numpy (runs in Jac's runtime)
 ml/                training: data gen, policy net, router distillation
-web/               single-page UI: board, agent org panel, reasoning log
-CONTRACT.md        the frozen wire format — the seam every workstream coded against
-docs/PROMPTS.md    prompt design writeup
+web/               the two-screen UI (mission setup + operations dashboard)
+CONTRACT.md        the frozen v2 wire format
 ```
 
-`lib/policy.py` is numpy-free by hard requirement: training runs on system Python with numpy,
-but inference runs inside Jac's bundled interpreter where numpy isn't installed.
+## The trained model
 
-## The trained models
-
-**Executor policy net** — 126 → ReLU(64) → softmax(4), Adam, 59k samples from 20k random grids.
-**96.17% held-out top-1** agreement with A\*; **97.63%** of its moves lie on *some* shortest path.
-Both numbers are reported because 48.3% of states have more than one optimal first move, so
-strict top-1 structurally understates it.
-
-**Commander router** — 10 → ReLU(16) → softmax(4). 98.08% held-out.
-**Read that number carefully:** no LLM decision logs existed yet, so it is distilled from a
-documented rule-based teacher. 98% means "the net learned our if-chain" — it is *not* evidence
-that LLM judgement was captured. `router.json` records this as `"trained_from":
-"synthetic_rule_teacher"`. Drop a JSONL at `ml/data/router_log.jsonl` to retrain from real logs
-with no code change.
-
-The policy net is **not** a safety mechanism. It has no notion of energy, bounds, or thrash,
-and it can propose moves into hazards. The Verifier's rules are the only thing preventing an
-illegal move.
+The Rescue Team's policy net is a from-scratch numpy MLP (126→64→4) trained by behavioral
+cloning on A\* demonstrations: **96% held-out agreement** with A\*'s optimal first move. It is a
+*proposer*, not a safety mechanism — it has no notion of hazards, air, or doctrine, and can
+propose an unsafe move. The Safety Officer's rules are the only thing that prevents one.
+(A second model distils a routing classifier from a documented rule-based teacher; `ml/README.md`
+is explicit that it learned the if-chain, not live LLM judgment.)
 
 ## Verified
 
-- Disruption at **every tick from 1–11** produces a veto with the executor's position held,
-  and the mission still completes. At tick 12+ the executor is adjacent to the survivor and
-  the disruption is correctly refused — the survivor's cell must never be blocked.
-- Two consecutive runs produce **byte-identical** transcripts.
-- Grid is always 64 cells; corner/edge/interior node degrees are 2/3/4.
-- Replay runs the full veto sequence with the backend process killed.
+- Every domain × disruption timing produces a Safety Officer HALT with the team's position held,
+  and the operation still reaches a safe terminal state.
+- Conservative / standard / aggressive risk produce visibly different Return-To-Base outcomes.
+- Live Groq completes a mission in ~7s (0.2s/tick); the offline mock completes with no key.
+- `lib/policy.py` confirmed numpy-free; scenarios deterministic and always solvable.
 
 ## Jac features used
 
-Object-Spatial Programming (`node` / `edge` / `walker`, typed `+>:Adj():+>` connections,
-filtered traversals `[root -->[?:Cell, x == 3]]`), **`by llm()`** for agent reasoning,
-**`sem`** semstrings for prompt wiring, **`MockLLM`** for offline runs, `def:pub`
-auto-generated REST endpoints, and automatic graph persistence.
+Object-Spatial Programming (`node`/`edge`/`walker`, typed `+>:Adj():+>` connections, filtered
+traversals), **`by llm()`** for agent reasoning, **`sem`** semstrings for prompt wiring,
+**`MockLLM`** for offline runs, `def:pub` auto-generated REST endpoints, `import`ed pure-Python
+`lib/*`, and automatic graph persistence.

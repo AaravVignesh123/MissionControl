@@ -12,10 +12,11 @@ raise, and on any failure they return a *clearly invalid* value (an empty task
 list / an empty move) so the backend can fall through to its deterministic A*
 result without special-casing exceptions.
 
-The model is chosen once at import time: a real Anthropic model when
-ANTHROPIC_API_KEY is present, otherwise byLLM's MockLLM so the whole system
-runs offline with no key at all.  `brain_mode()` inspects the object actually
-in use, so it can never claim "live" while running mocked.
+The model is chosen once at import time: Groq (fast, low-latency — ideal for a
+live per-tick sim loop) when GROQ_API_KEY is present, else Anthropic when
+ANTHROPIC_API_KEY is present, else byLLM's MockLLM so the whole system runs
+offline with no key at all.  `brain_mode()` inspects the object actually in use,
+so it can never claim "live" while running mocked.
 """
 
 import os;
@@ -49,30 +50,34 @@ sem PlannedTask.desc =
     "characters, written for a mission-control display. Example: 'Plot a "
     "hazard-free route to the survivor'. No agent name, no trailing period.";
 sem PlannedTask.owner =
-    "Exactly one of: Commander, Executor, Verifier, Planner. Pick the agent "
-    "whose job the task is - Planner computes routes, Executor moves one cell "
-    "at a time, Verifier checks each proposed move against the safety rules, "
-    "Commander re-plans when a move is rejected. Never invent another name.";
+    "Exactly one of the four ICS roles: Incident Commander, Operations, Rescue "
+    "Team, Safety Officer. Assign by whose job it is - Operations plans the "
+    "search route, the Rescue Team advances cell by cell, the Safety Officer "
+    "clears or halts each advance against doctrine, the Incident Commander "
+    "re-tasks after a halt. Never invent another role.";
 sem TaskPlan.tasks =
     "Two to four tasks in the order they should be carried out, together "
-    "covering routing, movement and verification.";
+    "covering route planning, advancing to victims, and safety verification.";
 
 sem MoveProposal.move =
     "Exactly one of NORTH, SOUTH, EAST, WEST in upper case and nothing else - "
     "no diagonals, no coordinates, no punctuation, no explanation.";
 sem MoveProposal.rationale =
-    "One short sentence, at most 100 characters, telling a human watching the "
-    "mission-control screen why this step was chosen. Plain present-tense "
-    "English, no step-by-step reasoning, no coordinate dumps, no markdown. "
-    "Example: 'Heading east closes the gap while the hazard wall stays clear.'";
+    "One short sentence, at most 100 characters, in the clipped voice of a "
+    "field radio call, telling an incident commander watching the board why "
+    "this step was chosen. Plain present-tense English, no step-by-step "
+    "reasoning, no coordinate dumps, no markdown. "
+    "Example: 'Advancing east toward the victim; collapse zone holds to the south.'";
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-glob LIVE_MODEL: str = "claude-sonnet-4-6";
+glob GROQ_MODEL: str = "groq/llama-3.3-70b-versatile";
+glob ANTHROPIC_MODEL: str = "claude-sonnet-4-6";
 glob DIRECTIONS: list[str] = ["NORTH", "SOUTH", "EAST", "WEST"];
-glob AGENTS: list[str] = ["Commander", "Executor", "Verifier", "Planner"];
+# ICS roles — the exact role strings the rest of the system uses.
+glob AGENTS: list[str] = ["Incident Commander", "Operations", "Rescue Team", "Safety Officer"];
 glob _ALIASES: dict[str, str] = {
     "N": "NORTH", "S": "SOUTH", "E": "EAST", "W": "WEST",
     "UP": "NORTH", "DOWN": "SOUTH", "RIGHT": "EAST", "LEFT": "WEST",
@@ -88,12 +93,18 @@ glob _OPPOSITE: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def _make_llm -> BaseLLM {
-    key: str = os.environ.get("ANTHROPIC_API_KEY") or "";
-    if key.strip() != "" {
-        # A bad key or a missing provider must never take the demo down -
-        # degrade to the offline mock and let brain_mode() say so.
+    # A bad key or missing provider must never take the demo down — every
+    # branch degrades to the offline mock and lets brain_mode() say so.
+    gkey: str = os.environ.get("GROQ_API_KEY") or "";
+    if gkey.strip() != "" {
         try {
-            return Model(model_name=LIVE_MODEL);
+            return Model(model_name=GROQ_MODEL);
+        } except Exception {}
+    }
+    akey: str = os.environ.get("ANTHROPIC_API_KEY") or "";
+    if akey.strip() != "" {
+        try {
+            return Model(model_name=ANTHROPIC_MODEL);
         } except Exception {}
     }
     return MockLLM(model_name="mockllm", config={"outputs": []});
@@ -121,19 +132,19 @@ def _llm_decompose(goal: str) -> TaskPlan by llm(
 );
 
 sem _llm_decompose =
-    "You are the Commander of a small autonomous search-and-rescue team "
-    "working an 8x8 grid. Break the mission goal into 2 to 4 concrete, ordered "
-    "tasks that the team will actually carry out, and assign each task to "
-    "exactly one teammate. The team is: Planner (computes a safe route), "
-    "Executor (advances one cell per tick), Verifier (checks every proposed "
-    "move against the grid safety rules), Commander (re-plans when a move is "
-    "rejected). Cover routing, movement and verification. Keep each task a "
-    "single short imperative phrase - these strings are rendered live on a "
-    "mission-control board. Do not restate the goal as a task and do not "
-    "invent agents outside the four listed.";
+    "You are the Incident Commander of a search-and-rescue task force running "
+    "an operation on an 8x8 sector grid under the Incident Command System. "
+    "Break the mission objective into 2 to 4 concrete, ordered tasks the team "
+    "will carry out, and assign each to exactly one role: Operations (plans the "
+    "search route), Rescue Team (advances one cell at a time toward victims), "
+    "Safety Officer (clears or halts each advance against safety doctrine), "
+    "Incident Commander (re-tasks after a halt). Cover route planning, "
+    "advancing to victims, and safety verification. Keep each task a single "
+    "short imperative phrase for a command-post board. Do not restate the "
+    "objective as a task and do not invent roles outside the four listed.";
 sem _llm_decompose.goal =
-    "The mission objective in plain English, including the survivor's grid "
-    "coordinates and any standing constraints such as avoiding hazards.";
+    "The operation objective in plain English, including how many victims and "
+    "any standing constraints such as avoiding hazards and keeping an egress.";
 
 
 def _llm_move(situation: str) -> MoveProposal by llm(
@@ -143,18 +154,19 @@ def _llm_move(situation: str) -> MoveProposal by llm(
 );
 
 sem _llm_move =
-    "You are the Executor of a search-and-rescue robot on an 8x8 grid. The "
-    "origin (0,0) is the top-left cell, x is the column and y is the row, so "
-    "NORTH decreases y, SOUTH increases y, EAST increases x and WEST "
-    "decreases x. Read the situation report and choose the single one-cell "
-    "step that makes the most progress toward the survivor. Never step into a "
-    "cell the report marks as a hazard and never step off the grid. If the "
-    "direct step is blocked, pick the best sideways step that keeps a route "
-    "open. Answer with one direction and one plain sentence a human can read "
-    "off the screen.";
+    "You are the Rescue Team advancing through a search-and-rescue sector on an "
+    "8x8 grid. The origin (0,0) is the top-left cell, x is the column and y is "
+    "the row, so NORTH decreases y, SOUTH increases y, EAST increases x and "
+    "WEST decreases x. Read the situation report and choose the single one-cell "
+    "advance that makes the most progress toward the stated objective (a victim "
+    "during search, or the staging area during egress). Never advance into a "
+    "cell the report marks BLOCKED and never step off the grid. If the direct "
+    "step is blocked, pick the best sideways step that keeps a route open. "
+    "Answer with one direction and one clipped field-radio sentence.";
 sem _llm_move.situation =
-    "A plain-text situation report: the robot's current cell, the survivor's "
-    "cell, remaining energy, and the state of each neighbouring cell.";
+    "A plain-text situation report: the team's current cell, the objective "
+    "cell, remaining resource, and the state of each neighbouring cell "
+    "(BLOCKED or clear).";
 
 # ---------------------------------------------------------------------------
 # Sanitisers - the happy path is good, the failure path is harmless
@@ -201,7 +213,7 @@ def _clean_owner(raw: str) -> str {
             return name;
         }
     }
-    return "Planner";
+    return "Operations";
 }
 
 sem _clean_owner = "Snap a model-supplied owner onto one of the four agents.";
@@ -257,15 +269,19 @@ sem _clean_proposal.proposal = "Raw proposal straight off the model.";
 
 glob _mock_prev: str = "";
 glob _mock_step: int = 0;
+glob _mock_trail: list[list[int]] = [];
+glob _MOCK_DELTA: dict[str, list[int]] = {
+    "NORTH": [0, -1], "SOUTH": [0, 1], "EAST": [1, 0], "WEST": [-1, 0]
+};
 
 
 def _mock_plan -> TaskPlan {
     return TaskPlan(
         tasks=[
-            PlannedTask(id="t1", desc="Plot a hazard-free route to the survivor", owner="Planner"),
-            PlannedTask(id="t2", desc="Advance one cell along the approved route", owner="Executor"),
-            PlannedTask(id="t3", desc="Check each proposed move against grid rules", owner="Verifier"),
-            PlannedTask(id="t4", desc="Re-plan whenever a move is vetoed", owner="Commander")
+            PlannedTask(id="t1", desc="Plan a hazard-free search route to victims", owner="Operations"),
+            PlannedTask(id="t2", desc="Advance one cell toward the objective", owner="Rescue Team"),
+            PlannedTask(id="t3", desc="Clear each advance against safety doctrine", owner="Safety Officer"),
+            PlannedTask(id="t4", desc="Re-task the team after a halt", owner="Incident Commander")
         ]
     );
 }
@@ -366,14 +382,20 @@ sem _mentioned.text = "Situation report text.";
 
 def _mock_proposal(situation: str) -> MoveProposal {
     _mock_step += 1;
-    goal: list[int] = _pair_near(situation, ["survivor", "target", "goal"]);
-    here: list[int] = _pair_near(situation, ["current", "position", "you are", "executor", "robot", "at ("]);
+    goal: list[int] = _pair_near(situation, ["victim", "objective", "staging", "survivor", "target", "goal"]);
+    here: list[int] = _pair_near(situation, ["at (", "current", "position", "you are", "team", "robot"]);
     seen: list[list[int]] = _pairs(situation);
     if len(here) < 2 and len(seen) > 0 {
         here = seen[0];
     }
     if len(goal) < 2 and len(seen) > 1 {
         goal = seen[len(seen) - 1];
+    }
+    # Short memory of recently-occupied cells, so the greedy heuristic doesn't
+    # ring around a wall it can't cross (the offline path stays clean without
+    # leaning on the Safety Officer's livelock guard to bail it out).
+    if len(here) >= 2 {
+        _mock_trail = (_mock_trail + [[here[0], here[1]]])[-6:];
     }
     bad: list[str] = _blocked(situation);
     # A direction the report never lists is not a neighbour at all (grid edge),
@@ -405,14 +427,36 @@ def _mock_proposal(situation: str) -> MoveProposal {
 
     allow: list[str] = okay if len(okay) > 0 else DIRECTIONS;
     pick: str = "";
+    # Pass 1: best forward step that is not blocked, not a reversal, and does
+    # not re-enter a cell we were just on (breaks rings around a wall).
     for name in order {
         if name in allow and name not in bad and name != back {
-            pick = name;
-            break;
+            tc: list[int] = [];
+            if len(here) >= 2 {
+                d = _MOCK_DELTA[name];
+                tc = [here[0] + d[0], here[1] + d[1]];
+            }
+            looped: bool = False;
+            for c in _mock_trail {
+                if len(tc) == 2 and c[0] == tc[0] and c[1] == tc[1] { looped = True; }
+            }
+            if not looped {
+                pick = name;
+                break;
+            }
         }
     }
+    # Pass 2: drop the trail guard (allowed to backtrack across old ground).
     if pick == "" {
-        # Every forward option is a dead end - drop the anti-thrash guard.
+        for name in order {
+            if name in allow and name not in bad and name != back {
+                pick = name;
+                break;
+            }
+        }
+    }
+    # Pass 3: dead end -- drop the anti-thrash guard too.
+    if pick == "" {
         for name in order {
             if name in allow and name not in bad {
                 pick = name;
@@ -429,12 +473,12 @@ def _mock_proposal(situation: str) -> MoveProposal {
     if len(goal) >= 2 {
         gx: int = goal[0];
         gy: int = goal[1];
-        why = f"{pick} closes the gap toward the survivor at ({gx},{gy}).";
+        why = f"Advancing {pick} toward the objective at ({gx},{gy}).";
         if pick in bad or (len(order) > 0 and order[0] != "" and order[0] != pick) {
-            why = f"Direct approach looks unsafe, so {pick} keeps a route open.";
+            why = f"Direct approach blocked, so {pick} keeps a route open.";
         }
     } else {
-        why = f"No fix on the survivor yet - sweeping {pick} across the grid.";
+        why = f"No fix on the objective yet - sweeping {pick} across the sector.";
     }
     return MoveProposal(move=pick, rationale=why);
 }

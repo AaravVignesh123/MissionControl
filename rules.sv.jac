@@ -1,22 +1,27 @@
-"""The Verifier's constraint checks.
+"""The Safety Officer's doctrine checks.
 
-PURE LOGIC ONLY.  There is deliberately no byLLM import, no `by llm()`, and no
-network call anywhere in this module: the veto is the climax of the demo and it
-must be reproducible on every single run.  Do not add an LLM here.
+PURE LOGIC ONLY. There is deliberately no byLLM import, no `by llm()`, and no
+network call anywhere in this module: the HALT is the climax of the demo and it
+must be reproducible on every single run. Do not add an LLM here.
 
-Rules, in evaluation order (CONTRACT.md):
-    in_bounds      target cell is outside the 8x8 grid
-    no_hazard      target cell kind == "hazard"
-    energy_budget  energy <= 0
-    no_thrash      the move revisits the immediately previous cell
+`lib.astar` is imported only for reachability math (escape-route / egress
+distance); it is pure-stdlib pathfinding, not a reasoning call.
+
+Rules, in evaluation order. Which are ACTIVE comes from the profile's doctrine
+list; thresholds come from the risk tolerance (the `reserve` multiplier):
+    in_bounds      target cell is outside the grid
+    no_hazard      target cell is a hazard (collapse / fire / hydraulic)
+    escape_route   the move severs the only safe path back to staging  -> WITHDRAW
+    air_reserve    can't advance and still egress with reserve in hand  -> WITHDRAW
+    no_thrash      the move oscillates back to the previous cell
     no_loop        the move re-enters a cell for the 3rd+ time (livelock)
     ok             approved
 """
 
+import lib.astar as astar;
+
 glob R_GRID_W: int = 8;
 glob R_GRID_H: int = 8;
-
-# Entering the same cell this many times (or more) is a livelock, not a route.
 glob LOOP_LIMIT: int = 3;
 
 glob DELTAS: dict[str, list[int]] = {
@@ -27,7 +32,7 @@ glob DELTAS: dict[str, list[int]] = {
 };
 
 
-"""The Verifier's ruling on a single proposed move."""
+"""The Safety Officer's ruling on a single proposed move."""
 obj Verdict {
     has vetoed: bool = False,
         rule: str = "ok",
@@ -42,7 +47,7 @@ def is_move(move: str) -> bool {
 }
 
 
-"""Cell [x, y] that `move` from `pos` would enter.  Unknown move -> `pos`."""
+"""Cell [x, y] that `move` from `pos` would enter. Unknown move -> `pos`."""
 def target_of(pos: list[int], move: str) -> list[int] {
     if not is_move(move) {
         return [pos[0], pos[1]];
@@ -52,24 +57,35 @@ def target_of(pos: list[int], move: str) -> list[int] {
 }
 
 
-"""Verify a proposed move.  Deterministic; never calls out to anything."""
+"""WITHDRAW rules end the operation safely (Return-To-Base) rather than reroute."""
+def is_withdraw_rule(rule: str) -> bool {
+    return rule == "air_reserve" or rule == "escape_route";
+}
+
+
+"""Verify a proposed move against the active doctrine. Deterministic.
+
+`cells` is GROUND TRUTH passability ("hazard" vs "open"). `doctrine` is the set
+of active rule ids for this profile. `staging` + `reserve` drive the two
+withdrawal rules. Never calls out to anything but pure pathfinding.
+"""
 def verify(
     cells: list[str],
     pos: list[int],
     move: str,
-    energy: int,
+    resource: int,
     prev: list[int] | None,
     visits: dict[str, int],
-    trusted_route: bool
+    trusted_route: bool,
+    staging: list[int],
+    reserve: float,
+    doctrine: list[str]
 ) -> Verdict {
-    # A non-direction (no proposer produced a usable move) can never be
-    # committed.  CONTRACT.md's `rule` enum has no slot for this, so it is
-    # reported under `in_bounds` -- the move leads nowhere on the grid.
     if not is_move(move) {
         return Verdict(
             vetoed=True,
             rule="in_bounds",
-            reason="No valid move proposed; nothing to execute",
+            reason="No viable advance proposed; nothing to execute",
             target_cell=None
         );
     }
@@ -78,81 +94,85 @@ def verify(
     tx = tgt[0];
     ty = tgt[1];
 
-    # 1. in_bounds
+    # in_bounds
     if tx < 0 or tx >= R_GRID_W or ty < 0 or ty >= R_GRID_H {
-        return Verdict(
-            vetoed=True,
-            rule="in_bounds",
-            reason=f"Move {move} leaves the grid at ({tx},{ty})",
-            target_cell=tgt
-        );
+        return Verdict(vetoed=True, rule="in_bounds",
+                       reason=f"Advance {move} leaves the operational area at ({tx},{ty})",
+                       target_cell=tgt);
     }
 
-    # 2. no_hazard
+    # no_hazard
     idx = ty * R_GRID_W + tx;
-    kind = "free";
+    kind = "open";
     if idx >= 0 and idx < len(cells) {
         kind = cells[idx];
     }
     if kind == "hazard" {
-        return Verdict(
-            vetoed=True,
-            rule="no_hazard",
-            reason=f"Move {move} enters hazard at ({tx},{ty})",
-            target_cell=tgt
-        );
+        return Verdict(vetoed=True, rule="no_hazard",
+                       reason=f"Advance {move} enters a hazard at ({tx},{ty})",
+                       target_cell=tgt);
     }
 
-    # 3. energy_budget
-    if energy <= 0 {
-        return Verdict(
-            vetoed=True,
-            rule="energy_budget",
-            reason=f"Move {move} refused: energy budget exhausted",
-            target_cell=tgt
-        );
-    }
-
-    # 4. no_thrash -- oscillation guard against bouncing back one cell.
-    if prev is not None {
-        if len(prev) == 2 and prev[0] == tx and prev[1] == ty {
-            return Verdict(
-                vetoed=True,
-                rule="no_thrash",
-                reason=f"Move {move} back-tracks to the previous cell ({tx},{ty})",
-                target_cell=tgt
-            );
+    # escape_route (WITHDRAW) -- after the move, is staging still reachable over
+    # safe ground?  If a disruption has severed the way out, doctrine says do not
+    # engage: withdraw.  (LCES for wildland; keep-a-route-to-the-bank for water.)
+    if "escape_route" in doctrine {
+        back = astar.find_path(cells, [tx, ty], staging) as list;
+        if len(back) == 0 {
+            return Verdict(vetoed=True, rule="escape_route",
+                           reason=f"Advance {move} severs the escape route to staging -- withdraw",
+                           target_cell=tgt);
         }
     }
 
-    # 5. no_loop -- livelock guard.  `no_thrash` only catches an immediate
-    # A->B->A bounce; a proposer can still cycle round a 4-cell ring forever,
-    # burning energy and never arriving.  (Observed for real: the Executor
-    # looped (7,4)->(6,4)->(6,3)->(7,3) until the battery died.)  Re-entering
-    # the same cell a third time is not navigation, it is a livelock.
-    #
-    # Exempt when the move comes from the Planner's A* route: that route is
-    # recomputed from the live map, is provably acyclic, and following it
-    # strictly cannot livelock.  Without this exemption a legitimate reroute
-    # that has to re-cross ground the Executor already covered gets vetoed
-    # forever, which is a livelock of the guard's own making.
-    key = f"{tx},{ty}";
-    seen = visits.get(key, 0) as int;
-    if seen >= LOOP_LIMIT and not trusted_route {
-        return Verdict(
-            vetoed=True,
-            rule="no_loop",
-            reason=f"Move {move} re-enters ({tx},{ty}) for the {seen + 1}th time -- livelock",
-            target_cell=tgt
-        );
+    # air_reserve (WITHDRAW) -- rule of thirds.  Refuse to advance if, after this
+    # step, the resource left can no longer cover the trip home with the required
+    # reserve.  Conservative crews turn back with more in the tank.
+    if "air_reserve" in doctrine {
+        home = astar.find_path(cells, [tx, ty], staging) as list;
+        egress = len(home);
+        if egress > 0 {
+            after = resource - 1;
+            # Explicit float() calls: `x as float < y` mis-parses in Jac (the
+            # cast binds looser than the comparison), which silently produced a
+            # spurious veto on tick 1.  Do NOT revert to `as float` here.
+            needed = float(egress) * reserve;
+            afterf = float(after);
+            if afterf < needed {
+                return Verdict(vetoed=True, rule="air_reserve",
+                               reason=f"advancing leaves {after} vs {int(needed)} needed to egress -- return to base",
+                               target_cell=tgt);
+            }
+        }
     }
 
-    return Verdict(
-        vetoed=False,
-        rule="ok",
-        reason=f"Move {move} to ({tx},{ty}) approved",
-        target_cell=tgt
-    );
+    # no_thrash -- oscillation guard against bouncing back one cell.
+    if "no_thrash" in doctrine and prev is not None {
+        if len(prev) == 2 and prev[0] == tx and prev[1] == ty {
+            return Verdict(vetoed=True, rule="no_thrash",
+                           reason=f"Advance {move} back-tracks to ({tx},{ty})",
+                           target_cell=tgt);
+        }
+    }
+
+    # no_loop -- livelock guard.  no_thrash only catches an immediate A->B->A
+    # bounce; a proposer can still cycle a 4-cell ring forever.  Re-entering a
+    # cell a third time is a livelock.  Exempt Operations' A* route: it is
+    # recomputed from the live map and is provably acyclic, so a legitimate
+    # reroute that re-crosses covered ground must not be blocked.
+    if "no_loop" in doctrine and not trusted_route {
+        key = f"{tx},{ty}";
+        seen = visits.get(key, 0) as int;
+        if seen >= LOOP_LIMIT {
+            return Verdict(vetoed=True, rule="no_loop",
+                           reason=f"Advance {move} re-enters ({tx},{ty}) a {seen + 1}th time -- livelock",
+                           target_cell=tgt);
+        }
+    }
+
+    return Verdict(vetoed=False, rule="ok",
+                   reason=f"Advance {move} to ({tx},{ty}) cleared",
+                   target_cell=tgt);
 }
 
 

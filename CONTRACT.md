@@ -1,193 +1,159 @@
-# Mission Control — Frozen State Contract
+# Mission Control — Wire Contract (v2, SAR simulator)
 
-**This file is the single source of truth for the wire format.** Backend, frontend, and ML
-all code against it independently. Do not change a field name without updating every consumer.
+**Single source of truth for the wire format.** Backend and frontend code against this.
 
-Grid is **8×8**. Origin `(0,0)` is **top-left**. `x` = column (→ east), `y` = row (↓ south).
-So `NORTH` = `y-1`, `SOUTH` = `y+1`, `EAST` = `x+1`, `WEST` = `x-1`.
+Mission Control is a **search-and-rescue operations simulator**. A department picks a domain
+**profile**, sets **tunables**, and rehearses the operation. Four ICS agents run it; the
+**Safety Officer** enforces doctrine and can halt the team. Grid is 8×8, origin `(0,0)`
+top-left, `x`=column (east), `y`=row (south). NORTH=y-1, SOUTH=y+1, EAST=x+1, WEST=x-1.
+
+Server runs on **port 8800**.
+
+## ICS roles (exact strings — panels/log/handoffs key off these)
+
+`"Incident Commander"` · `"Operations"` · `"Rescue Team"` · `"Safety Officer"`
+
+(Formerly Commander / Planner / Executor / Verifier.)
 
 ## Endpoints
 
-Server runs on **port 8800** (port 8000 is occupied by another app on this machine).
-
 | Method | Path | Body | Purpose |
 |---|---|---|---|
-| POST | `/function/get_state` | `{}` | Full state snapshot. Frontend polls this ~2×/sec. |
-| POST | `/function/tick` | `{}` | Advance exactly one perceive→reason→verify→act cycle. Returns new state. |
-| POST | `/function/reset_mission` | `{}` | Rebuild grid from the known-good seed, tick 0. |
-| POST | `/function/inject_hazard` | `{"x":int,"y":int}` | Drop a hazard at a specific cell. Refused if it would strand the mission. |
-| POST | `/function/inject_hazard_ahead` | `{}` | **The disruption — use this one.** Drops a hazard on the cell the Executor is about to enter, so the veto fires on the very next tick regardless of which proposer is winning. |
+| POST | `/function/list_profiles` | `{}` | The 3 domain profiles + tunable specs, for the setup screen. |
+| POST | `/function/configure_mission` | `{"profile":str,"tunables":{...},"seed":int}` | Build a scenario and start it. Returns state. |
+| POST | `/function/get_state` | `{}` | Full state snapshot. Frontend polls this. |
+| POST | `/function/tick` | `{}` | Advance one perceive→plan→verify→act cycle. |
+| POST | `/function/reset_mission` | `{}` | Rebuild with the last config. |
+| POST | `/function/inject_disruption` | `{}` | **The disruption** — domain hazard on the cell the team is about to enter. |
 
-Every response is wrapped in the Jac envelope — **the state object is at `data.result`**:
+Every response is the Jac envelope; **the payload is at `data.result`**. Ignore `_jac_*` keys.
 
-```json
-{"ok":true,"type":"response","data":{"result": <STATE>, "reports":[]},"error":null,"meta":{...}}
+## `list_profiles` result
+
+```jsonc
+{
+  "profiles": [
+    {"id":"urban","name":"Urban Search & Rescue","code":"US&R","agency":"FEMA US&R Task Force",
+     "summary":"...","resource_label":"SCBA air","hazard_noun":"collapse zone",
+     "cell_labels":{"open":"Cleared void","hazard":"Collapse zone","staging":"Staging area","victim":"Trapped victim"}},
+    {"id":"wildland", ...}, {"id":"swiftwater", ...}
+  ],
+  "tunables": {
+    "team_size":{"min":1,"max":6,"default":3,"label":"Team size","help":"..."},
+    "resource_budget":{"min":16,"max":72,"default":44,"label":"Resource budget","help":"..."},
+    "hazard_density":{"min":0,"max":6,"default":3,"label":"Hazard density","help":"..."},
+    "victim_count":{"min":1,"max":3,"default":2,"label":"Victims","help":"..."},
+    "risk_tolerance":{"values":["conservative","standard","aggressive"],"default":"standard","label":"Risk tolerance","help":"..."}
+  },
+  "default_profile":"urban"
+}
 ```
 
-Frontend must read `json.data.result`. Ignore `_jac_type` / `_jac_id` / `_jac_archetype` keys.
-
-## The STATE object
+## STATE object (`get_state` / `tick` / `configure_mission` / `reset_mission` / `inject_disruption`)
 
 ```jsonc
 {
   "tick": 12,
-  "status": "running",         // "running" | "complete" | "failed"
+  "clock": "T+00:12",              // mission clock derived from tick (MM:SS-ish)
+  "status": "running",             // "running" | "complete" | "aborted" | "failed"
+                                   //   complete = all victims reached AND team egressed to staging
+                                   //   aborted  = Safety Officer ordered Return-To-Base (air reserve)
+                                   //   failed   = resource hit 0 in the field (backstop)
+
+  "profile": { /* the chosen profile object from list_profiles, verbatim */
+    "id":"urban","name":"Urban Search & Rescue","code":"US&R","agency":"...","summary":"...",
+    "resource_label":"SCBA air","resource_unit":"min","hazard_noun":"collapse zone",
+    "safe_noun":"cleared void","objective_noun":"trapped victim","staging_noun":"staging area",
+    "disruption_label":"SECONDARY COLLAPSE",
+    "cell_labels":{"open":"...","hazard":"...","staging":"...","victim":"..."}
+  },
+
+  "config": {"team_size":3,"resource_budget":44,"hazard_density":3,"victim_count":2,
+             "risk_tolerance":"standard","seed":7},
 
   "mission": {
-    "goal": "Locate and reach the survivor at (7,6). Avoid all hazards.",
-    "tasks": [
-      {"id":"t1","desc":"Plot safe route to survivor","owner":"Planner","state":"done"},
-      {"id":"t2","desc":"Advance one cell along route","owner":"Executor","state":"active"}
-      // state: "pending" | "active" | "done" | "blocked"
-    ]
+    "objective": "Reach 2 trapped victims and egress to staging.",
+    "phase": "search",             // "search" (heading to a victim) | "egress" (heading home) | "done"
+    "tasks": [ {"id":"t1","desc":"...","owner":"Operations","state":"done"},
+               {"id":"t2","desc":"...","owner":"Rescue Team","state":"active"} ]
+    // state: "pending" | "active" | "done" | "blocked"
   },
 
   "grid": {
-    "w": 8, "h": 8,
-    // Row-major array of 64 strings. index = y*8 + x
-    // "free" | "hazard" | "target" | "start"
-    "cells": ["start","free","free","hazard", "..."]
+    "w":8, "h":8,
+    "cells": [ /* 64 row-major kind strings: "open"|"hazard"|"staging"|"victim" */ ],
+    "staging": [0,7]
   },
 
-  "executor": {
-    "pos": [3,4],              // [x,y]
-    "energy": 27,              // decrements 1 per committed move; mission fails at 0
-    "path": [[3,4],[3,5],[4,5]], // current planned route incl. current pos; [] if none
-    "visited": [[0,0],[1,0]]   // trail for rendering
+  "responder": {                   // the deployed team's position (formerly executor)
+    "pos":[3,4],
+    "resource": 27,                // remaining; decrements 1 per committed move
+    "resource_max": 44,
+    "objective":[7,0],             // cell being headed to (current victim, or staging on egress)
+    "path":[[3,4],[3,5]],          // planned route incl. current pos; [] if none
+    "visited":[[0,7],[1,7]]
   },
 
-  // What each of the three proposers wanted THIS tick. null before first tick.
-  "proposals": {
-    "llm":   "NORTH",          // "NORTH"|"SOUTH"|"EAST"|"WEST"|null
-    "net":   "NORTH",
-    "astar": "EAST",
-    "chosen":"NORTH",
-    "source":"llm",            // which proposer won: "llm"|"net"|"astar"
-    "agreed": false,           // did all three non-null proposers agree?
-    "net_confidence": 0.87     // policy-net softmax max, 0..1
+  "victims": {
+    "total": 2,
+    "reached": 1,
+    "remaining": [[7,0]],          // not yet reached
+    "rescued":   [[0,1]]           // reached
   },
 
-  // The Verifier's ruling on `proposals.chosen`. null before first tick.
-  "verdict": {
+  "proposals": {                   // what each proposer wanted this tick; null before first tick
+    "llm":"NORTH","net":"NORTH","astar":"EAST","chosen":"NORTH",
+    "source":"llm","agreed":false,"net_confidence":0.87
+  },
+
+  "verdict": {                     // Safety Officer's ruling; null before first tick
     "vetoed": true,
-    "rule": "no_hazard",       // "no_hazard"|"in_bounds"|"energy_budget"|"no_thrash"|"no_loop"|"ok"
-    "reason": "Move NORTH enters hazard at (3,3)",
-    "target_cell": [3,3]       // cell the rejected move would have entered; null if n/a
+    "rule": "no_hazard",           // in_bounds|no_hazard|air_reserve|escape_route|no_thrash|no_loop|ok
+    "reason": "Advance NORTH enters collapse zone at (3,3)",
+    "target_cell": [3,3]
   },
 
-  // Newest LAST. Frontend animates the edge for entries with tick == state.tick.
-  "handoffs": [
-    {"tick":12,"from":"Verifier","to":"Commander","task_id":"t2",
-     "payload":{"rule":"no_hazard","blocked_move":"NORTH"}}
-  ],
+  "handoffs": [ {"tick":12,"from":"Safety Officer","to":"Incident Commander",
+                 "task_id":"t2","payload":{"rule":"no_hazard"}} ],
 
-  // Newest LAST. Frontend renders the tail and auto-scrolls.
-  "log": [
-    {"tick":12,"agent":"Commander","level":"info","text":"Decomposed mission into 2 tasks"},
-    {"tick":12,"agent":"Verifier","level":"veto","text":"VETO: move NORTH enters hazard at (3,3)"}
-    // level: "info" | "veto" | "success" | "warn"
-  ],
+  "log": [ {"tick":12,"clock":"T+00:12","agent":"Safety Officer","level":"veto",
+            "text":"HALT: advance NORTH enters collapse zone at (3,3)"} ],
+            // level: "info" | "veto" | "success" | "warn"
 
-  "stats": {
-    "moves_committed": 11,
-    "vetoes": 2,
-    "llm_calls": 4,
-    "replans": 2,
-    "llm_mode": "live"         // "live" | "mock"  — surfaced in the UI so the demo is honest
-  }
+  "stats": {"moves_committed":11,"vetoes":2,"llm_calls":4,"replans":2,
+            "rescued":1,"llm_mode":"live"}   // llm_mode: "live" | "mock"
 }
 ```
 
-## Agent names (exact strings — the UI keys panels off these)
+## Safety Officer doctrine rules (pure logic, never an LLM call)
 
-`"Commander"`, `"Executor"`, `"Verifier"`, `"Planner"`
+Which rules are active comes from the profile; thresholds come from `risk_tolerance`.
 
-## Rules the Verifier enforces (pure logic, never an LLM call)
-
-| `rule` | Vetoes when |
-|---|---|
-| `in_bounds` | target cell is outside the 8×8 grid |
-| `no_hazard` | target cell `kind == "hazard"` |
-| `energy_budget` | `energy <= 0` |
-| `no_thrash` | the move revisits the immediately previous cell (oscillation guard) |
-| `no_loop` | the move re-enters a cell for the 3rd+ time (livelock guard; exempt for the Planner's A\* route) |
+| `rule` | Vetoes when | Domain framing |
+|---|---|---|
+| `in_bounds` | target cell is outside the grid | leaving the operational area |
+| `no_hazard` | target cell is `hazard` | entering collapse / active fire / hydraulic |
+| `air_reserve` | remaining resource < (egress distance × reserve multiplier) → **orders RTB, status→aborted** | rule of thirds; conservative=2.0, standard=1.3, aggressive=1.05 |
+| `escape_route` | the move severs the only safe path back to staging | LCES / never lose your way out |
+| `no_thrash` | the move bounces straight back to the previous cell | oscillation guard |
+| `no_loop` | the move re-enters a cell for the 3rd+ time | livelock guard (exempt for Operations' A\* route) |
+| `ok` | approved | — |
 
 ## Two world models — why the veto is meaningful
 
-Ground truth and the team's belief are deliberately different:
-
-- **The Verifier** checks against live ground truth. It is the safety authority.
-- **Commander / Planner / Executor / policy net** reason over the *last-known* map — a freshly
-  injected hazard is not on it yet.
-
-A disruption is therefore invisible to the planners at the moment it lands. They propose a move
-that *was* safe, the Verifier catches it against live sensor truth, and **the veto is how the team
-learns the hazard exists**. The blocked cell then graduates onto the known map and the Planner
-routes around it. Without this split the proposers would silently avoid every new hazard and the
-Verifier would have nothing to catch.
-
-**Veto → re-delegate.** A veto also transfers routing authority from the Executor's own proposers
-to the Planner's deterministic A\* route for the next tick (`no_loop` transfers it permanently).
-This is what stops a confidently-wrong proposer from being vetoed on the same move forever.
-| `ok` | not a veto — the move is approved |
-
-## Canonical seed map (frozen — all modules must agree)
-
-```
-START  = (0,0)          TARGET = (7,6)        ENERGY_START = 40
-HAZARDS = (3,0) (3,1) (3,3) (3,5) (3,6) (3,7)   <- wall at x=3, TWO gaps: (3,2) and (3,4)
-          (5,2) (6,5) (1,6) (5,7)
-```
-Baseline A\* solution is **14 cells**, threading the gap at `(3,4)`.
-
-**The second gap is load-bearing.** With a single gap the wall has choke points — blocking
-`(2,4)`, `(3,4)` or `(4,4)` seals the survivor off entirely, so the disruption has to refuse
-those cells and drops its hazard somewhere the executor never walks, and the veto never fires.
-With two gaps the baseline route is byte-identical but **no cell on it is a choke point**, so
-the executor's next step can always be blocked. Verified exhaustively.
-
-**Use `/function/inject_hazard_ahead` for the demo** rather than a fixed coordinate: the three
-proposers don't always agree on the route, so a hardcoded cell can miss. Verified: disrupting at
-any tick from 1–11 produces a veto with position held, and the mission still completes every time.
-At tick 12+ the executor is adjacent to the survivor and the disruption is correctly refused —
-the survivor's own cell must never be blocked.
-
-## Module interfaces (frozen — these are the seams between parallel workstreams)
-
-### `lib/astar.py` — pure Python, stdlib only
-```python
-def find_path(cells: list[str], start: tuple, goal: tuple) -> list[list[int]]
-    """cells = 64 row-major strings. Returns [[x,y],...] incl. start and goal; [] if unreachable."""
-
-def next_move(cells: list[str], pos: tuple, goal: tuple) -> str | None
-    """Returns "NORTH"|"SOUTH"|"EAST"|"WEST", or None if no path."""
-```
-
-### `lib/policy.py` — pure Python, **NO numpy** (must run inside Jac's bundled runtime)
-```python
-def predict(cells: list[str], pos: tuple, goal: tuple) -> tuple[str, float]
-    """Returns (move, confidence 0..1). Loads ml/weights/policy.json at import time.
-       Must degrade gracefully to ("", 0.0) if weights are missing."""
-```
-
-### `brain.sv.jac` — the byLLM layer
-```jac
-obj PlannedTask { has id: str; has desc: str; has owner: str; }
-obj TaskPlan    { has tasks: list[PlannedTask]; }
-obj MoveProposal{ has move: str; has rationale: str; }
-
-def commander_decompose(goal: str) -> TaskPlan by llm();
-def executor_propose(situation: str) -> MoveProposal by llm();
-def brain_mode() -> str;   # "live" | "mock" — drives stats.llm_mode
-```
-`move` must be one of `NORTH|SOUTH|EAST|WEST`; the backend treats anything else as invalid
-and falls through to the next proposer.
+Ground truth vs. the team's belief are deliberately separated: the **Safety Officer** checks
+live ground truth; **Incident Commander / Operations / Rescue Team / policy net** reason over
+the *last-known* map. A disruption is real immediately but not on the team's map — they advance
+into what *was* safe, the Safety Officer catches it against live sensors, and **the halt is how
+the team learns the hazard exists**. A veto also transfers routing authority to Operations' A\*
+route for the next tick (`no_loop` transfers it permanently).
 
 ## Invariants (tests assert these)
 
-1. A vetoed move **never** changes `executor.pos`.
-2. Every veto appends a `Verifier → Commander` handoff **and** a `level:"veto"` log entry.
-3. `executor.energy` decrements only on a committed move.
+1. A vetoed move never changes `responder.pos`.
+2. Every veto appends a `Safety Officer → Incident Commander` handoff and a `level:"veto"` log.
+3. `responder.resource` decrements only on a committed move.
 4. `grid.cells` is always exactly 64 entries.
-5. `tick` increases by exactly 1 per `/function/tick` call, veto or not.
-6. `status` flips to `"complete"` the tick `executor.pos` equals the target cell.
+5. `tick` increases by exactly 1 per `/tick`, veto or not.
+6. `status` → `complete` only when all victims reached **and** the team is back at staging.
+7. `inject_disruption` never places a hazard that would strand the mission.
